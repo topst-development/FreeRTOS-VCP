@@ -32,7 +32,7 @@
 #include "can_drv.h"
 #include "can_porting.h"
 #include "can_demo.h"
-
+#include "can_vcp_ctrl.h"
 
 /**************************************************************************************************
 *                                            DEFINITIONS
@@ -380,6 +380,7 @@ static void CAN_DemoReceive
                 mcu_printf( "\n" );
                 mcu_printf( "***********************************************************************************\n" );
                 mcu_printf( "\n" );
+				ControlBreadBoardSensors(sRxMsg.mId, sRxMsg.mDataLength, sRxMsg.mData);
             }
             else
             {
@@ -718,6 +719,8 @@ static void CAN_DemoTask
 
     ( void ) pArg;
 
+	InitSensorControls();
+
     while( 1 )
     {
         if( sTestInfo.tiRecv == TRUE )
@@ -728,7 +731,7 @@ static void CAN_DemoTask
             }
         }
 
-        ( void ) SAL_TaskSleep( 100 );
+        ( void ) SAL_TaskSleep( 1 );
     }
 }
 
