@@ -23,9 +23,9 @@
 #define IN3   GPIO_GPA(20)
 #define IN4   GPIO_GPA(19)
 
-#define ENA_SEL      GPIO_PERICH_SEL_PWMSEL_0
+#define ENA_SEL      0
 #define ENA_PORT    GPIO_PERICH_CH0
-#define ENB_SEL      GPIO_PERICH_SEL_PWMSEL_4
+#define ENB_SEL      4
 #define ENB_PORT    GPIO_PERICH_CH1
 
 #define PWM_PERIOD_NS    (10000000)
