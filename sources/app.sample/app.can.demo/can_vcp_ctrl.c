@@ -413,7 +413,49 @@ void MotorB_Set(uint32 duty_pct, uint32 forward)
 	cfgB.mcDutyNanoSec1 = duty_pct_to_ns(duty_pct, cfgB.mcPeriodNanoSec1);
     (void)pdm_apply(ENB_SEL, &cfgB);
 }
+void ConfigureServoPWM(uint32 channel, uint32 port, uint32 angle_deg)
+{
+    PDMModeConfig_t pwm_cfg;
+    uint32 duty_ns = 500000 + (angle_deg * (2000000 / 180)); // 0~180도 → 0.5~2.5ms
+    uint32 wait_cnt = 0;
 
+    pwm_cfg.mcPortNumber      = port;
+    pwm_cfg.mcOperationMode   = PDM_OUTPUT_MODE_PHASE_1;
+    pwm_cfg.mcInversedSignal  = 0;
+    pwm_cfg.mcOutSignalInIdle = 0;
+    pwm_cfg.mcLoopCount       = 0;
+    pwm_cfg.mcOutputCtrl      = 0;
+
+    pwm_cfg.mcPeriodNanoSec1  = 20000000; // 20ms (50Hz)
+    pwm_cfg.mcDutyNanoSec1    = duty_ns;
+    pwm_cfg.mcPeriodNanoSec2  = 0;
+    pwm_cfg.mcDutyNanoSec2    = 0;
+
+    PDM_Disable(channel, PMM_ON);
+    while (PDM_GetChannelStatus(channel))
+    {
+        SAL_TaskSleep(1);
+        if (++wait_cnt > 100)
+        {
+            mcu_printf("Timeout on channel %d\n", channel);
+            return;
+        }
+    }
+
+    if (PDM_SetConfig(channel, &pwm_cfg) != SAL_RET_SUCCESS)
+    {
+        mcu_printf("SetConfig fail (CH:%d)\n", channel);
+        return;
+    }
+
+    if (PDM_Enable(channel, PMM_ON) != SAL_RET_SUCCESS)
+    {
+        mcu_printf("Enable fail (CH:%d)\n", channel);
+        return;
+    }
+
+   
+}
 void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, uint8* pucData)
 {
 	uint8 ucMsgData[2] = {0x00, 0x00};
@@ -533,7 +575,20 @@ void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, uint8* pucData)
 			
 			break;
 		}
+		case VCP_IO_MOTOR_WHEEL: // Servo motor control
+		{
+			int input = pucData[0];   // 0~256
+			if (input < 0) input = 0;
+			if (input > 256) input = 256;
 
+			// 중앙 기준으로 -45~+45도로 매핑
+			int angle = 90 + ((input - 130) * 45) / 130;
+
+			ConfigureServoPWM(5, GPIO_PERICH_CH3, angle);
+
+			mcu_printf("[SERVO] input=%d -> angle=%d deg\r\n", input, angle);
+			break;
+		}
 		default:
 			// undefined message
 			mcu_printf("[%s][%d] undefined can id !!!\r\n", __FUNCTION__, __LINE__);
