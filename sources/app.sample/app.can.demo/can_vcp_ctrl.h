@@ -28,7 +28,7 @@
 #define ENB_SEL      4
 #define ENB_PORT    GPIO_PERICH_CH1
 
-#define PWM_PERIOD_NS    (250000)
+#define PDM_PERIOD_NS    (250000)
 #define SPEED_MAX    80
 #define DUTY_MAX     80
 #define MIN_ON_NS    15000
