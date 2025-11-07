@@ -16,10 +16,13 @@
 #include "stdio.h"
 
 #include "can_vcp_ctrl.h"
+#define MIN_DUTY      (20) 
 
 /**************************************************************************************************
 *                                           LOCAL FUNCTIONS
 **************************************************************************************************/
+static PDMModeConfig_t cfgA, cfgB;
+
 static void BrakeLED_ON(void);
 static void BrakeLED_OFF(void);
 static void LeftSignalLED_ON(void);
@@ -35,16 +38,16 @@ static void lcd_data(uint8 data);
 static void lcd_init(void);
 static void lcd_print(const char *str);
 
-static PDMModeConfig_t cfgA, cfgB;
 static void pin_out(uint32 p);
 static void pin_hi (uint32 p);
 static void pin_lo (uint32 p);
+
 static int pdm_apply(uint32 ch, PDMModeConfig_t* cfg);
-static uint32 duty_pct_to_ns(uint32 pct, uint32 period_ns);
-static uint32 duty_from_speed(uint32 speed);
 static void MotorPWM_Init(void);
 static void MotorA_Set(uint32 duty_pct, uint32 forward);
 static void MotorB_Set(uint32 duty_pct, uint32 forward);
+static uint32 duty_pct_to_ns(uint32 pct, uint32 period_ns);
+static sint8 duty_from_speed(sint8 speed);
 
 static void ControlBrakeLight(boolean bTurnOn);
 static void ControlSignalLight(boolean bLeft, boolean bTurnOn);
@@ -274,60 +277,34 @@ void ControlFuelLevel(uint8 fuelLevel)
 
 /* -------------------------- Motor with PWM -------------------------- */
 
-void pin_out(uint32 p) 
-{ 
-	GPIO_Config(p, GPIO_OUTPUT | GPIO_DS(0x3) | GPIO_FUNC(0)); 
-}
-
-void pin_hi (uint32 p) 
-{ 
-	GPIO_Set(p, 1); 
-}
-
-void pin_lo (uint32 p) 
-{ 
-	GPIO_Set(p, 0); 
-}
-
-int pdm_apply(uint32 ch, PDMModeConfig_t* cfg)
+static inline void pin_out(uint32 p) { GPIO_Config(p, GPIO_OUTPUT | GPIO_FUNC(0) | GPIO_DS(3)); }
+static inline void pin_hi(uint32 p)  { GPIO_Set(p, 1); }
+static inline void pin_lo(uint32 p)  { GPIO_Set(p, 0); }
+static int pdm_apply(uint32 ch, PDMModeConfig_t* cfg)
 {
     (void)PDM_Disable(ch, PMM_OFF);
-    uint32 wait=0;
+    uint32 wait = 0;
 
-    while (PDM_GetChannelStatus(ch) && wait < 100)
-	{ 
-		SAL_TaskSleep(1); wait++; 
-	}
+    while (PDM_GetChannelStatus(ch) && wait < 100) {
+        SAL_TaskSleep(1);
+        wait++;
+    }
 
-    if (PDM_SetConfig(ch, cfg) != SAL_RET_SUCCESS) 
-	{
-		return -1;
-	}
-		
-    if (PDM_Enable(ch, PMM_OFF) != SAL_RET_SUCCESS)
-	{
-		return -2;
-	}
-    
-	return 0;
+    if (PDM_SetConfig(ch, cfg) != SAL_RET_SUCCESS) return -1;
+    if (PDM_Enable(ch, PMM_OFF) != SAL_RET_SUCCESS) return -2;
+    return 0;
 }
 
 uint32 duty_pct_to_ns(uint32 pct, uint32 period_ns)
 {
-    if (pct == 0)
-	{
-		return 0;
-	}
-	if (pct > 100)
-	{
-		pct = 100;
-	} 
-	uint64 num = (uint64)period_ns * (uint64)pct + 50ULL;
-    uint32 ns  = (uint32)(num / 100ULL);
-    return ns;
+    if (pct == 0) return 0;
+    if (pct > 100) pct = 100;
+    if (pct < MIN_DUTY && pct > 0) pct = MIN_DUTY;
+    uint64 num = (uint64)period_ns * (uint64)pct + 50ULL;
+    return (uint32)(num / 100ULL);
 }
 
-uint32 duty_from_speed(uint32 speed)
+sint8 duty_from_speed(sint8 speed)
 {
     if (speed == 0) 
 	{
@@ -337,6 +314,11 @@ uint32 duty_from_speed(uint32 speed)
 	{
 		speed = 80;
 	}
+    if (speed < 0)
+    {
+        return 0;
+    }
+
     return 40 + ((speed - 1) * 80) / 79;
 }
 
@@ -345,11 +327,13 @@ void MotorPWM_Init(void)
     static boolean inited = FALSE;
     if (inited) return;
 
-    /* Init Pin */
-    pin_out(IN1); pin_out(IN2); pin_out(IN3); pin_out(IN4);
-    pin_lo(IN1);  pin_lo(IN2);  pin_lo(IN3);  pin_lo(IN4);
+    /* GPIO 초기화 */
+    pin_out(IN1); pin_out(IN2);
+    pin_out(IN3); pin_out(IN4);
+    pin_lo(IN1); pin_lo(IN2);
+    pin_lo(IN3); pin_lo(IN4);
 
-    /* Init PDM */
+    /* PDM 초기화 */
     PDM_Init();
     PDM_CfgSetWrPw();
     PDM_CfgSetWrLock(0);
@@ -357,24 +341,15 @@ void MotorPWM_Init(void)
     SAL_MemSet(&cfgA, 0, sizeof(cfgA));
     cfgA.mcPortNumber      = ENA_PORT;
     cfgA.mcOperationMode   = PDM_OUTPUT_MODE_PHASE_1;
-    cfgA.mcInversedSignal  = 0;
-    cfgA.mcOutSignalInIdle = 0;
-    cfgA.mcLoopCount       = 0;
-    cfgA.mcOutputCtrl      = 0;
     cfgA.mcPeriodNanoSec1  = PWM_PERIOD_NS;
     cfgA.mcDutyNanoSec1    = 0;
+    (void)pdm_apply(ENA_SEL, &cfgA);
 
     SAL_MemSet(&cfgB, 0, sizeof(cfgB));
     cfgB.mcPortNumber      = ENB_PORT;
     cfgB.mcOperationMode   = PDM_OUTPUT_MODE_PHASE_1;
-    cfgB.mcInversedSignal  = 0;
-    cfgB.mcOutSignalInIdle = 0;
-    cfgB.mcLoopCount       = 0;
-    cfgB.mcOutputCtrl      = 0;
     cfgB.mcPeriodNanoSec1  = PWM_PERIOD_NS;
     cfgB.mcDutyNanoSec1    = 0;
-
-	(void)pdm_apply(ENA_SEL, &cfgA);
     (void)pdm_apply(ENB_SEL, &cfgB);
 
     inited = TRUE;
@@ -382,37 +357,34 @@ void MotorPWM_Init(void)
 
 void MotorA_Set(uint32 duty_pct, uint32 forward)
 {
-    if (forward)
-	{ 
-		pin_lo(IN1); 
-		pin_hi(IN2); 
-	}
-    else
-	{ 
-		pin_hi(IN1); 
-		pin_lo(IN2); 
-	}
+    if (duty_pct == 0) {
+        pin_lo(IN1); pin_lo(IN2);
+    } else if (forward) {
+        pin_lo(IN1); pin_hi(IN2);   // 정방향
+    } else {
+        pin_hi(IN1); pin_lo(IN2);   // 역방향
+    }
 
     cfgA.mcDutyNanoSec1 = duty_pct_to_ns(duty_pct, cfgA.mcPeriodNanoSec1);
-	(void)pdm_apply(ENA_SEL, &cfgA);
+    (void)pdm_apply(ENA_SEL, &cfgA);
+    
 }
 
 void MotorB_Set(uint32 duty_pct, uint32 forward)
 {
-    if (forward)
-	{ 
-		pin_hi(IN3); 
-		pin_lo(IN4); 
-	}
-    else        
-	{ 
-		pin_lo(IN3); 
-		pin_hi(IN4); 
-	}
+    if (duty_pct == 0) {
+        pin_lo(IN3); pin_lo(IN4);
+    } else if (forward) {
+        pin_hi(IN3); pin_lo(IN4);   // 정방향
+    } else {
+        pin_lo(IN3); pin_hi(IN4);   // 역방향
+    }
 
-	cfgB.mcDutyNanoSec1 = duty_pct_to_ns(duty_pct, cfgB.mcPeriodNanoSec1);
+    cfgB.mcDutyNanoSec1 = duty_pct_to_ns(duty_pct, cfgB.mcPeriodNanoSec1);
     (void)pdm_apply(ENB_SEL, &cfgB);
+    
 }
+
 void ConfigureServoPWM(uint32 channel, uint32 port, uint32 angle_deg)
 {
     PDMModeConfig_t pwm_cfg;
@@ -454,11 +426,12 @@ void ConfigureServoPWM(uint32 channel, uint32 port, uint32 angle_deg)
         return;
     }
 
-   
+    mcu_printf("CH%d angle: %3d° → duty: %d ns\n", channel, angle_deg, duty_ns);
 }
-void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, uint8* pucData)
+
+void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, sint8* pucData)
 {
-	uint8 ucMsgData[2] = {0x00, 0x00};
+	sint8 ucMsgData[2] = {0x00, 0x00};
 
 	if(nDataLength == 0)
 	{
@@ -558,37 +531,46 @@ void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, uint8* pucData)
 
 		case VCP_IO_MOTOR_SPEED:
 		{
-			static uint32 duty = 0;
-			uint32 speed = pucData[0]; // 0~80
+			static sint8 duty = 0;
+			sint8 speed = pucData[0]; // 0~80
 
-			if(duty != duty_from_speed(speed))
+			if(speed==0)
 			{
-				duty = duty_from_speed(speed);
+				MotorA_Set(0, 1);
+				MotorB_Set(0, 1);
+			}
+			else if(speed > 0)
+			{
+                duty = duty_from_speed(speed);
 				MotorA_Set(duty, 1);
 				MotorB_Set(duty, 1);
+            }
+            else 
+            {
+                duty = duty_from_speed(speed);
+				MotorA_Set(duty, 0);
+				MotorB_Set(duty, 0);
+            }
 
-			}
-			else
-				break;
-
-			mcu_printf("[MOTOR] speed=%d => duty=%d%%\r\n", (int)speed, (int)duty);
+			mcu_printf("[MOTOR] speed=%d => duty=%d%%\r\n", (sint8)speed, (sint8)duty);
 			
 			break;
 		}
 		case VCP_IO_MOTOR_WHEEL: // Servo motor control
 		{
-			int input = pucData[0];   // 0~256
+			int8_t input = (int8_t)pucData[0];   // 0~256
 			if (input < 0) input = 0;
-			if (input > 256) input = 256;
+			if (input > 127) input = 127;
 
 			// 중앙 기준으로 -45~+45도로 매핑
-			int angle = 90 + ((input - 130) * 45) / 130;
+			int angle = 90 + ((input - 65) * 45) / 65;
 
 			ConfigureServoPWM(5, GPIO_PERICH_CH3, angle);
 
 			mcu_printf("[SERVO] input=%d -> angle=%d deg\r\n", input, angle);
 			break;
 		}
+			
 		default:
 			// undefined message
 			mcu_printf("[%s][%d] undefined can id !!!\r\n", __FUNCTION__, __LINE__);
@@ -597,3 +579,5 @@ void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, uint8* pucData)
 
 }
 #endif
+
+
