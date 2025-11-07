@@ -28,7 +28,7 @@
 #define ENB_SEL      4
 #define ENB_PORT    GPIO_PERICH_CH1
 
-#define PWM_PERIOD_NS    (10000000)
+#define PWM_PERIOD_NS    (250000)
 #define SPEED_MAX    80
 #define DUTY_MAX     80
 #define MIN_ON_NS    60000
@@ -70,7 +70,7 @@ enum VCP_IO_SUBTYPE {
 /**************************************************************************************************
 *                                        FUNCTION PROTOTYPES
 **************************************************************************************************/
-void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, uint8* pucData);
+void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, sint8* pucData);
 boolean InitSensorControls(void);
 
 
