@@ -34,7 +34,7 @@ static void HeadLED_OFF(void);
 
 static void lcd_send(uint8 mode, uint8 data);
 static void lcd_cmd(uint8 cmd);
-static void lcd_data(uint8 data);
+static void lcd_data(uint8 dat);
 static void lcd_init(void);
 static void lcd_print(const char *str);
 
