@@ -24,3 +24,4 @@ INCLUDES += -I$(MCU_BSP_APP_SAMPLE_CAN_DEMO_PATH)
 
 # Sources
 SRCS += can_demo.c
+SRCS += can_vcp_ctrl.c
