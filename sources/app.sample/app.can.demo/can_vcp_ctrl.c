@@ -16,7 +16,7 @@
 #include "stdio.h"
 
 #include "can_vcp_ctrl.h"
-#define MIN_DUTY      (20) 
+#define MIN_DUTY      (35) 
 
 /**************************************************************************************************
 *                                           LOCAL FUNCTIONS
