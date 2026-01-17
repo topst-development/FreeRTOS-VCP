@@ -720,7 +720,7 @@ static void CAN_DemoTask
     uint8 ucCh;
 
     ( void ) pArg;
-
+    SystemPwmInitOnce();
 
     while( 1 )
     {
