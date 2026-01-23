@@ -155,15 +155,15 @@ static void LedGpioInitOnce(void)
     static boolean inited = FALSE;
     if (inited) return;
 
-    GPIO_Config(CLASS_00, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
-    GPIO_Config(CLASS_01, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
-    GPIO_Config(CLASS_02, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
-    GPIO_Config(CLASS_03, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
+    GPIO_Config(CLASS_00_LED, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
+    GPIO_Config(CLASS_01_LED, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
+    GPIO_Config(CLASS_02_LED, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
+    GPIO_Config(CLASS_03_LED, GPIO_FUNC(0) | GPIO_OUTPUT | GPIO_NOPULL | GPIO_DS(3) | GPIO_INPUTBUF_DIS);
 
-    GPIO_Set(CLASS_00, 0);
-    GPIO_Set(CLASS_01, 0);
-    GPIO_Set(CLASS_02, 0);
-    GPIO_Set(CLASS_03, 0);
+    GPIO_Set(CLASS_00_LED, 0);
+    GPIO_Set(CLASS_01_LED, 0);
+    GPIO_Set(CLASS_02_LED, 0);
+    GPIO_Set(CLASS_03_LED, 0);
 
     inited = TRUE;
 }
@@ -202,16 +202,16 @@ void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, sint8* pucData)
         return;
     }
     LedGpioInitOnce();
-    GPIO_Set(CLASS_00, 0);
-    GPIO_Set(CLASS_01, 0);
-    GPIO_Set(CLASS_02, 0);
-    GPIO_Set(CLASS_03, 0);
+    GPIO_Set(CLASS_00_LED, 0);
+    GPIO_Set(CLASS_01_LED, 0);
+    GPIO_Set(CLASS_02_LED, 0);
+    GPIO_Set(CLASS_03_LED, 0);
 
     if (action == VCP_IO_ACTION_ON){
     switch (mId)
     {
         case CLASS_00:{
-            GPIO_Set(CLASS_00, 1);
+            GPIO_Set(CLASS_00_LED, 1);
             uint32 angle = (toggle == 0) ? 40: 150;
             toggle ^= 1;
             Servo_Set_Smooth(angle);
@@ -221,7 +221,7 @@ void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, sint8* pucData)
             break;
         }
         case CLASS_01:{
-            GPIO_Set(CLASS_01, 1);
+            GPIO_Set(CLASS_01_LED, 1);
             uint32 angle = (toggle == 0) ? 40: 150;
             toggle ^= 1;
             Servo_Set_Smooth(angle);
@@ -231,7 +231,7 @@ void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, sint8* pucData)
             break;
         }
         case CLASS_02:{
-            GPIO_Set(CLASS_02, 1);
+            GPIO_Set(CLASS_02_LED, 1);
             uint32 angle = (toggle == 0) ? 40: 150;
             toggle ^= 1;
             Servo_Set_Smooth(angle);
@@ -241,7 +241,7 @@ void ControlBreadBoardSensors(uint32 mId, uint8 nDataLength, sint8* pucData)
             break;
         }
         case CLASS_03:{
-            GPIO_Set(CLASS_03, 1);
+            GPIO_Set(CLASS_03_LED, 1);
             uint32 angle = (toggle == 0) ? 40: 150;
             toggle ^= 1;
             Servo_Set_Smooth(angle);
