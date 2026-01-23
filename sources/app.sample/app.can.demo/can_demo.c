@@ -32,7 +32,7 @@
 #include "can_drv.h"
 #include "can_porting.h"
 #include "can_demo.h"
-
+#include "can_vcp_ctrl.h"
 
 /**************************************************************************************************
 *                                            DEFINITIONS
@@ -43,7 +43,9 @@
 *                                          LOCAL VARIABLES
 **************************************************************************************************/
 
-static CANDemoTestInfo_t sTestInfo;
+static CANDemoTestInfo_t sTestInfo = {
+    .tiRecv = TRUE
+};
 
 static CANFlagValue_t gCompletedFlag[3];
 static CANFlagValue_t gErrorFlag[3];
@@ -380,6 +382,7 @@ static void CAN_DemoReceive
                 mcu_printf( "\n" );
                 mcu_printf( "***********************************************************************************\n" );
                 mcu_printf( "\n" );
+				ControlBreadBoardSensors(sRxMsg.mId, sRxMsg.mDataLength, sRxMsg.mData);
             }
             else
             {
@@ -717,6 +720,7 @@ static void CAN_DemoTask
     uint8 ucCh;
 
     ( void ) pArg;
+    SystemPwmInitOnce();
 
     while( 1 )
     {
@@ -728,7 +732,7 @@ static void CAN_DemoTask
             }
         }
 
-        ( void ) SAL_TaskSleep( 100 );
+        ( void ) SAL_TaskSleep( 1 );
     }
 }
 
