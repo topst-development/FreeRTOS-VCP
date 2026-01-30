@@ -43,7 +43,9 @@
 *                                          LOCAL VARIABLES
 **************************************************************************************************/
 
-static CANDemoTestInfo_t sTestInfo;
+static CANDemoTestInfo_t sTestInfo = {
+    .tiRecv = TRUE
+};
 
 static CANFlagValue_t gCompletedFlag[3];
 static CANFlagValue_t gErrorFlag[3];
