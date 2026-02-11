@@ -37,7 +37,14 @@
 #endif  // ( MCU_BSP_SUPPORT_APP_CONSOLE == 1 )
 
 #if ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
+	#include <FreeRTOS.h>
+	#include <event_groups.h>
+	#include <queue.h>
+	#include <task.h>
     #include <can_demo.h>
+	#include <gpio_ctrl.h>
+	#include <pdm_ctrl.h>
+	#include <i2c_ctrl.h>
 #endif  // ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
 
 #if ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
@@ -62,11 +69,27 @@
 uint32                                  gALiveMsgOnOff;
 static uint32                           gALiveCount;
 
+/* VCP Multi-Tasking Resources */
+EventGroupHandle_t xVcpEventGroup = NULL;
+QueueHandle_t      xCanQueue      = NULL;
+VcpMessage_t       g_vcp_shared_buf;
+
+#define VCP_DATA_READY_BIT (1 << 0)
+
 /*
 ***************************************************************************************************
 *                                         FUNCTION PROTOTYPES
 ***************************************************************************************************
 */
+static void VcpDispatcherTask
+(
+	void *pvParameters
+);
+
+static void VCP_CreateApp
+(
+	void
+);
 
 static void Main_StartTask
 (
@@ -170,16 +193,18 @@ static void Main_StartTask(void * pArg)
     (void)SAL_OsInitFuncs();
 
     /* Service Init*/
+	MotorPWM_Init();
+	LCDSensor_Init();
 
     /* Create application tasks */
     AppTaskCreate();
 
-    while (1)
-    {  /* Task body, always written as an infinite loop.       */
-        DisplayAliveLog();
-        //mcu_printf("\n MCU Idle !!!");
-        (void)SAL_TaskSleep(5000);
-    }
+	//while (1)
+    //{  /* Task body, always written as an infinite loop.       */
+    //    DisplayAliveLog();
+    //    //mcu_printf("\n MCU Idle !!!");
+    //    (void)SAL_TaskSleep(5000);
+    //}
 }
 
 static void AppTaskCreate(void)
@@ -202,6 +227,7 @@ static void AppTaskCreate(void)
 
 #if ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
     CAN_DemoCreateApp();
+	VCP_CreateApp();
 #endif  // ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
 
 #if ( MCU_BSP_SUPPORT_APP_FW_UPDATE == 1 )
@@ -315,6 +341,115 @@ static void DisplayOTPInfo(void)
 #else
     mcu_printf("    HSM    READY : %d\n",    hsm_ready);
 #endif
+}
+
+/* VCP Task Stack Size Defines */
+#define VCP_DISP_STK_SIZE   (256)
+#define VCP_CTRL_STK_SIZE   (256)
+#define VCP_LCD_STK_SIZE    (512) // LCD/snprintf 사용으로 넉넉하게
+
+void VcpDispatcherTask(void *pvParameters) 
+{
+    VcpMessage_t rxMsg;
+    (void)pvParameters;
+
+    for (;;) 
+    {
+        /* 1. 큐에서 데이터가 들어올 때까지 무한 대기 (Blocked) */
+        if (xQueueReceive(xCanQueue, &rxMsg, portMAX_DELAY) == pdPASS) 
+        {
+            /* 2. 데이터를 공유 버퍼(Global)에 복사 */
+            g_vcp_shared_buf = rxMsg;
+
+            /* 3. 모든 Task 깨우기 (Event Bit 설정) */
+            xEventGroupSetBits(xVcpEventGroup, VCP_DATA_READY_BIT);
+
+            /* 4. 소비자 Task들이 데이터를 읽을 시간을 줌 */
+            vTaskDelay(pdMS_TO_TICKS(5));
+
+            /* 5. 다음 메시지를 위해 비트 초기화 (Clear) */
+            xEventGroupClearBits(xVcpEventGroup, VCP_DATA_READY_BIT);
+        }
+    }
+}
+
+void VCP_CreateApp(void)
+{
+    /* 1. RTOS 자원(Queue, EventGroup) 생성 */
+    if (xVcpEventGroup == NULL) {
+        xVcpEventGroup = xEventGroupCreate();
+    }
+    if (xCanQueue == NULL) {
+        xCanQueue = xQueueCreate(20, sizeof(VcpMessage_t));
+    }
+
+    /* 2. Task ID 및 Stack 메모리 정적 선언 */
+    // (1) Dispatcher Task
+    static uint32 uiDispID;
+    static uint32 uiDispStk[VCP_DISP_STK_SIZE];
+
+    // (2) Brake Task
+    static uint32 uiBrakeID;
+    static uint32 uiBrakeStk[VCP_CTRL_STK_SIZE];
+
+    // (3) Motor Speed Task
+    static uint32 uiSpeedID;
+    static uint32 uiSpeedStk[VCP_CTRL_STK_SIZE];
+
+    // (4) Motor Wheel Task
+    static uint32 uiWheelID;
+    static uint32 uiWheelStk[VCP_CTRL_STK_SIZE];
+
+    // (5) Emergency Task
+    static uint32 uiEmerID;
+    static uint32 uiEmerStk[VCP_CTRL_STK_SIZE];
+
+    // (6) Turn Signal Task
+    static uint32 uiTurnID;
+    static uint32 uiTurnStk[VCP_CTRL_STK_SIZE];
+
+    // (7) Head Light Task
+    static uint32 uiHeadID;
+    static uint32 uiHeadStk[VCP_CTRL_STK_SIZE];
+
+    // (8) Fuel Level Task
+    static uint32 uiFuelID;
+    static uint32 uiFuelStk[VCP_LCD_STK_SIZE];
+
+
+    /* 3. SAL_TaskCreate를 이용한 Task 생성 */
+
+    // [Dispatcher]
+    (void)SAL_TaskCreate(&uiDispID, (const uint8 *)"VCP Disp", (SALTaskFunc)&VcpDispatcherTask,
+                         &uiDispStk[0], VCP_DISP_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+
+    // [Brake]
+    (void)SAL_TaskCreate(&uiBrakeID, (const uint8 *)"VCP Brake", (SALTaskFunc)&BrakeLightTask,
+                         &uiBrakeStk[0], VCP_CTRL_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+
+    // [Motor Speed]
+    (void)SAL_TaskCreate(&uiSpeedID, (const uint8 *)"VCP Speed", (SALTaskFunc)&MotorSpeedTask,
+                         &uiSpeedStk[0], VCP_CTRL_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+
+    // [Motor Wheel]
+    (void)SAL_TaskCreate(&uiWheelID, (const uint8 *)"VCP Wheel", (SALTaskFunc)&MotorWheelTask,
+                         &uiWheelStk[0], VCP_CTRL_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+
+    // [Emergency]
+    (void)SAL_TaskCreate(&uiEmerID, (const uint8 *)"VCP Emer", (SALTaskFunc)&EmergencySignalTask,
+                         &uiEmerStk[0], VCP_CTRL_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+
+    // [Turn Signal]
+    (void)SAL_TaskCreate(&uiTurnID, (const uint8 *)"VCP Turn", (SALTaskFunc)&TurnSignalTask,
+                         &uiTurnStk[0], VCP_CTRL_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+
+    // [Head Light]
+    (void)SAL_TaskCreate(&uiHeadID, (const uint8 *)"VCP Head", (SALTaskFunc)&HeadLightTask,
+                         &uiHeadStk[0], VCP_CTRL_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+
+    // [Fuel Level]
+    (void)SAL_TaskCreate(&uiFuelID, (const uint8 *)"VCP Fuel", (SALTaskFunc)&FuelLevelTask,
+                         &uiFuelStk[0], VCP_LCD_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
 }
 
 #endif  // ( MCU_BSP_SUPPORT_APP_BASE == 1 )

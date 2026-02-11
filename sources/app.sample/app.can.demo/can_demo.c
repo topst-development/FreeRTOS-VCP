@@ -32,12 +32,17 @@
 #include "can_drv.h"
 #include "can_porting.h"
 #include "can_demo.h"
-#include "can_vcp_ctrl.h"
+
+#include <FreeRTOS.h>
+#include <queue.h>
+#include <task.h>
+#include <vcp_types.h>
 
 /**************************************************************************************************
 *                                            DEFINITIONS
 **************************************************************************************************/
 
+extern QueueHandle_t xCanQueue;
 
 /**************************************************************************************************
 *                                          LOCAL VARIABLES
@@ -352,6 +357,7 @@ static void CAN_DemoReceive
     uint32          uiRxMsgNum;
     uint8           ucMsgLength;
     CANMessage_t    sRxMsg;
+	VcpMessage_t 	msgToSend; // Dispatcher로 보낼 구조체 변수 추가
 
     uiRxMsgNum      = 0;
 
@@ -370,6 +376,19 @@ static void CAN_DemoReceive
                 mcu_printf( "***********************************************************************************\n" );
                 mcu_printf( "[ID] : 0x%X, [DATA SIZE] : %d, [DATA] : \r\n", sRxMsg.mId, sRxMsg.mDataLength );
 
+				msgToSend.mId = sRxMsg.mId;
+                msgToSend.data[0] = sRxMsg.mData[0];
+                msgToSend.data[1] = sRxMsg.mData[1];
+
+                // 2. Queue로 전송
+                if (xCanQueue != NULL)
+                {
+                    if (xQueueSend(xCanQueue, &msgToSend, 0) != pdPASS)
+                    {
+                        mcu_printf("[CAN] Error: Queue Full!\n");
+                    }
+                }
+				/*
                 for( ucMsgLength = 1U ; ucMsgLength < ( sRxMsg.mDataLength + 1U ) ; ucMsgLength++ )
                 {
                     mcu_printf( "0x%02X ", sRxMsg.mData[ ucMsgLength - 1U ] );
@@ -382,7 +401,7 @@ static void CAN_DemoReceive
                 mcu_printf( "\n" );
                 mcu_printf( "***********************************************************************************\n" );
                 mcu_printf( "\n" );
-				ControlBreadBoardSensors(sRxMsg.mId, sRxMsg.mDataLength, sRxMsg.mData);
+				ControlBreadBoardSensors(sRxMsg.mId, sRxMsg.mDataLength, sRxMsg.mData);*/
             }
             else
             {
@@ -720,8 +739,6 @@ static void CAN_DemoTask
     uint8 ucCh;
 
     ( void ) pArg;
-
-	InitSensorControls();
 
     while( 1 )
     {

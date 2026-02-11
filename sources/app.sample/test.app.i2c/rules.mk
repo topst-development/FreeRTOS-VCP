@@ -24,4 +24,5 @@ INCLUDES += -I$(MCU_BSP_APP_SAMPLE_I2C_TEST_PATH)
 
 # Sources
 SRCS += i2c_test.c
+SRCS += i2c_ctrl.c
 

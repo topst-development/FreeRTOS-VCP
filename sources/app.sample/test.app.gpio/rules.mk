@@ -24,4 +24,5 @@ INCLUDES += -I$(MCU_BSP_APP_SAMPLE_GPIO_TEST_PATH)
 
 # Sources
 SRCS += gpio_test.c
+SRCS += gpio_ctrl.c
 
