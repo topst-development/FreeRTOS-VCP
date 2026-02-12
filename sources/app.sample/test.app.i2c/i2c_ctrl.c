@@ -1,13 +1,13 @@
 #include "i2c.h"
 #include "stdio.h"
 #include "i2c_ctrl.h"
-#include <vcp_types.h>
 #include <FreeRTOS.h>
-#include <event_groups.h>
 #include <task.h>
+#include <queue.h>
 
-extern EventGroupHandle_t xVcpEventGroup;
-extern VcpMessage_t       g_vcp_shared_buf;
+#include <vcp_types.h>
+
+extern QueueHandle_t xQ_Fuel;
 
 #define VCP_DATA_READY_BIT (1 << 0)
 
@@ -113,21 +113,21 @@ void ControlFuelLevel(uint8 fuelLevel)
 	mcu_printf("[FUEL] Controlling Fuel Level\r\n");
 }
 
-void FuelLevelTask(void *pvParameters)
+/* ------------------------------- Task ------------------------------- */
+
+void FuelLevelTask(void *pvParameters) 
 {
-    VcpMessage_t fuelMsg;
-    uint8_t fuelLevel = 0;
+    uint8 recvBuf[2];
+    uint8 fuelLevel = 0;
 
-    for (;;) {
-        xEventGroupWaitBits(xVcpEventGroup, VCP_DATA_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
-        fuelMsg = g_vcp_shared_buf;
+    (void)pvParameters;
 
-        if (fuelMsg.mId == VCP_IO_FUEL_LEVEL) {
-            fuelLevel = (fuelMsg.data[0] > 100) ? 100 : fuelMsg.data[0];
-            ControlFuelLevel(fuelLevel);
-            mcu_printf("[FUEL] Level set to %d%%\r\n", fuelLevel);
+    for (;;) 
+    {
+        if (xQueueReceive(xQ_Fuel, recvBuf, portMAX_DELAY) == pdPASS) 
+        {
+            fuelLevel = (recvBuf[0] > 100) ? 100 : recvBuf[0];
+			ControlFuelLevel(fuelLevel);
         }
-
-        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

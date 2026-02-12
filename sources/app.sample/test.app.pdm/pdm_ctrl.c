@@ -3,12 +3,13 @@
 #include "stdio.h"
 #include "pdm_ctrl.h"
 #include <FreeRTOS.h>
-#include <event_groups.h>
 #include <task.h>
+#include <queue.h>
+
 #include <vcp_types.h>
 
-extern EventGroupHandle_t xVcpEventGroup;
-extern VcpMessage_t       g_vcp_shared_buf;
+extern QueueHandle_t xQ_MotorSpeed;
+extern QueueHandle_t xQ_MotorWheel;
 
 #define VCP_DATA_READY_BIT (1 << 0)
 
@@ -200,51 +201,57 @@ void ConfigureServoPWM(uint32 channel, uint32 port, uint32 angle_deg)
     mcu_printf("CH%d angle: %3d° → duty: %d ns\n", channel, angle_deg, duty_ns);
 }
 
-void MotorSpeedTask(void *pvParameters) {
-    VcpMessage_t motorspeedMsg;
-    int8_t duty = 0;
+/* -------------------------- Task -------------------------- */
+
+void MotorSpeedTask(void *pvParameters) 
+{
+    uint8 recvBuf[2];
     int8_t speed = 0;
+    int8_t duty = 0;
 
-    for (;;) {
-        xEventGroupWaitBits(xVcpEventGroup, VCP_DATA_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
-        motorspeedMsg = g_vcp_shared_buf;
+    (void)pvParameters;
 
-        if (motorspeedMsg.mId == VCP_IO_MOTOR_SPEED) {
-            speed = (int8_t)motorspeedMsg.data[0]; // 0~80
+    for (;;) 
+    {
+        if (xQueueReceive(xQ_MotorSpeed, recvBuf, portMAX_DELAY) == pdPASS) 
+        {
+            speed = (int8_t)recvBuf[0]; 
 
-            if (speed == 0) {
+            if (speed == 0) 
+            {
+                duty = 0;
                 MotorA_Set(0, 1);
                 MotorB_Set(0, 1);
             }
-            else if (speed > 0) {
+            else if (speed > 0) 
+            {
                 duty = duty_from_speed(speed);
-                MotorA_Set(duty, 1);
+                MotorA_Set(duty, 1); // 1: 정방향
                 MotorB_Set(duty, 1);
             }
-            else {
-				duty = duty_from_speed(speed < 0 ? -speed : speed);
-                //duty = duty_from_speed(speed);
-                MotorA_Set(duty, 0);
+            else 
+            {
+                duty = duty_from_speed(speed * -1); 
+                MotorA_Set(duty, 0); // 0: 역방향
                 MotorB_Set(duty, 0);
             }
-
-            mcu_printf("[MOTOR] speed=%d => duty=%d%%\r\n", speed, duty);
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
-void MotorWheelTask(void *pvParameters) {
-    VcpMessage_t wheelMsg;
+void MotorWheelTask(void *pvParameters)
+{
+    uint8 recvBuf[2];
     int8_t input = 0;
     int angle = 0;
 
-    for (;;) {
-        xEventGroupWaitBits(xVcpEventGroup, VCP_DATA_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
-        wheelMsg = g_vcp_shared_buf;
+    (void)pvParameters;
 
-        if (wheelMsg.mId == VCP_IO_MOTOR_WHEEL) {
-            input = (int8_t)wheelMsg.data[0];
+    for (;;)
+    {
+        if (xQueueReceive(xQ_MotorWheel, recvBuf, portMAX_DELAY) == pdPASS)
+        {
+            input = (int8_t)recvBuf[0];
 
             if (input < 0) input = 0;
             if (input > 127) input = 127;
@@ -252,9 +259,6 @@ void MotorWheelTask(void *pvParameters) {
             angle = 90 + ((input - 65) * 45) / 65;
 
             ConfigureServoPWM(5, GPIO_PERICH_CH3, angle);
-
-            mcu_printf("[SERVO] input=%d -> angle=%d deg\r\n", input, angle);
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

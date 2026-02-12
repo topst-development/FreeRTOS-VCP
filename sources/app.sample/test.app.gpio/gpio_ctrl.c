@@ -3,12 +3,15 @@
 #include "bsp.h"
 #include "gpio_ctrl.h"
 #include <FreeRTOS.h>
-#include <event_groups.h>
 #include <task.h>
+#include <queue.h>
+
 #include <vcp_types.h>
 
-extern EventGroupHandle_t xVcpEventGroup;
-extern VcpMessage_t       g_vcp_shared_buf;
+extern QueueHandle_t xQ_Brake;
+extern QueueHandle_t xQ_Turn;
+extern QueueHandle_t xQ_Emer;
+extern QueueHandle_t xQ_Head;
 
 #define VCP_DATA_READY_BIT (1 << 0)
 
@@ -136,97 +139,111 @@ void ControlHeadLight(boolean bTurnOn)
     }
 }
 
-void BrakeLightTask(void *pvParameters) {
-    VcpMessage_t brakeMsg;
+/* ------------------------------- Task ------------------------------- */
 
-    for (;;) {
-        xEventGroupWaitBits(xVcpEventGroup, VCP_DATA_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
-        brakeMsg = g_vcp_shared_buf;
+void BrakeLightTask(void *pvParameters) 
+{
+    uint8 recvBuf[2];
 
-        if (brakeMsg.mId == VCP_IO_BREAK_LIGHT) {
-            if (brakeMsg.data[0] == VCP_IO_ACTION_ON) {
-                // turn on the break light
+    (void)pvParameters;
+
+    for (;;) 
+    {
+        if (xQueueReceive(xQ_Brake, recvBuf, portMAX_DELAY) == pdPASS) 
+        {
+            if (recvBuf[0] == VCP_IO_ACTION_ON) 
+            {
                 ControlBrakeLight(TRUE);
             }
-            else if (brakeMsg.data[0] == VCP_IO_ACTION_OFF) {
-                // turn off the break light
+            else if (recvBuf[0] == VCP_IO_ACTION_OFF) 
+            {
                 ControlBrakeLight(FALSE);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(1)); 
     }
 }
 
-void TurnSignalTask(void *pvParameters) {
-    VcpMessage_t turnsignalMsg;
-    for (;;) {
-        xEventGroupWaitBits(xVcpEventGroup, VCP_DATA_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
-        turnsignalMsg = g_vcp_shared_buf;
+void TurnSignalTask(void *pvParameters)
+{
+    uint8 recvBuf[2];
 
-        if (turnsignalMsg.mId == VCP_IO_TURN_SIGNAL) {
-            // ucMsgData[0]은 SUBTYPE(LEFT/RIGHT), [1]은 ACTION(ON/OFF)
-            if (turnsignalMsg.data[0] == VCP_IO_SUB_LEFT) {
-                ControlSignalLight(TRUE, (turnsignalMsg.data[1] == VCP_IO_ACTION_ON));
+    (void)pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(xQ_Turn, recvBuf, portMAX_DELAY) == pdPASS)
+        {
+            // [LEFT] 왼쪽 방향지시등 제어
+            if (recvBuf[0] == VCP_IO_SUB_LEFT)
+            {
+                ControlSignalLight(TRUE, (recvBuf[1] == VCP_IO_ACTION_ON));
             }
-            else if (turnsignalMsg.data[0] == VCP_IO_SUB_RIGHT) {
-                ControlSignalLight(FALSE, (turnsignalMsg.data[1] == VCP_IO_ACTION_ON));
+            // [RIGHT] 오른쪽 방향지시등 제어
+            else if (recvBuf[0] == VCP_IO_SUB_RIGHT)
+            {
+                ControlSignalLight(FALSE, (recvBuf[1] == VCP_IO_ACTION_ON));
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
-void EmergencySignalTask(void *pvParameters) {
-    VcpMessage_t emergencyMsg;
+void EmergencySignalTask(void *pvParameters) 
+{
+    uint8 recvBuf[2];
     boolean isEmergencyActive = FALSE;
     boolean bLedState = FALSE;
-    EventBits_t uxBits;
     TickType_t xTimeout;
 
-    for (;;) {
+    (void)pvParameters;
+
+    for (;;) 
+    {
         if (isEmergencyActive == TRUE) {
             xTimeout = pdMS_TO_TICKS(500);
         } else {
             xTimeout = portMAX_DELAY;
         }
 
-        uxBits = xEventGroupWaitBits(xVcpEventGroup, VCP_DATA_READY_BIT, pdFALSE, pdTRUE, xTimeout);
-
-        if ((uxBits & VCP_DATA_READY_BIT) == VCP_DATA_READY_BIT) {
-            
-            emergencyMsg = g_vcp_shared_buf;
-
-            if (emergencyMsg.mId == VCP_IO_EMER_SIGNAL) {
-                if (emergencyMsg.data[0] == VCP_IO_ACTION_ON) {
-                    isEmergencyActive = TRUE;
-                    mcu_printf("[EMER] Active ON\n");
-                } 
-                else if (emergencyMsg.data[0] == VCP_IO_ACTION_OFF) {
-                    isEmergencyActive = FALSE;
-                    bLedState = FALSE;
-                    ControlSignalLight(TRUE, FALSE);  // 왼쪽 끄기
-                    ControlSignalLight(FALSE, FALSE); // 오른쪽 끄기
-                    mcu_printf("[EMER] Active OFF\n");
-                }
+        if (xQueueReceive(xQ_Emer, recvBuf, xTimeout) == pdPASS) 
+        {
+            if (recvBuf[0] == VCP_IO_ACTION_ON) 
+            {
+                isEmergencyActive = TRUE;
+                bLedState = TRUE;
+                ControlSignalLight(TRUE, TRUE);
+                ControlSignalLight(FALSE, TRUE);
+            }
+            else if (recvBuf[0] == VCP_IO_ACTION_OFF) 
+            {
+                isEmergencyActive = FALSE;
+                bLedState = FALSE;
+                ControlSignalLight(TRUE, FALSE);
+                ControlSignalLight(FALSE, FALSE);
             }
         }
-        else if (isEmergencyActive == TRUE) {
-            bLedState = !bLedState;
-            ControlSignalLight(TRUE, bLedState);
-            ControlSignalLight(FALSE, bLedState);
+        else 
+        {
+            if (isEmergencyActive == TRUE) 
+            {
+                bLedState = !bLedState;
+                ControlSignalLight(TRUE, bLedState);
+                ControlSignalLight(FALSE, bLedState);
+            }
         }
     }
 }
 
-void HeadLightTask(void *pvParameters) {
-    VcpMessage_t headMsg;
-    for (;;) {
-        xEventGroupWaitBits(xVcpEventGroup, VCP_DATA_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
-        headMsg = g_vcp_shared_buf;
+void HeadLightTask(void *pvParameters) 
+{
+    uint8 recvBuf[2];
 
-        if (headMsg.mId == VCP_IO_HEAD_LIGHT) {
-            ControlHeadLight(headMsg.data[0] == VCP_IO_ACTION_ON);
+    (void)pvParameters;
+
+    for (;;) 
+    {
+        if (xQueueReceive(xQ_Head, recvBuf, portMAX_DELAY) == pdPASS) 
+        {
+            ControlHeadLight(recvBuf[0] == VCP_IO_ACTION_ON);
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

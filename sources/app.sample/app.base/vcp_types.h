@@ -1,11 +1,6 @@
 #ifndef VCP_TYPES_HEADER
 #define VCP_TYPES_HEADER
 
-typedef struct {
-    uint32 mId;
-    uint8  data[2];
-} VcpMessage_t;
-
 enum VCP_IO_TYPE {
     VCP_IO_BREAK_LIGHT  = 0x101,
     VCP_IO_MOTOR_SPEED  = 0x102,

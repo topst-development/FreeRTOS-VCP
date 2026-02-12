@@ -36,13 +36,20 @@
 #include <FreeRTOS.h>
 #include <queue.h>
 #include <task.h>
+
 #include <vcp_types.h>
 
 /**************************************************************************************************
 *                                            DEFINITIONS
 **************************************************************************************************/
 
-extern QueueHandle_t xCanQueue;
+extern QueueHandle_t xQ_Brake;
+extern QueueHandle_t xQ_MotorSpeed;
+extern QueueHandle_t xQ_MotorWheel;
+extern QueueHandle_t xQ_Emer;
+extern QueueHandle_t xQ_Fuel;
+extern QueueHandle_t xQ_Turn;
+extern QueueHandle_t xQ_Head;
 
 /**************************************************************************************************
 *                                          LOCAL VARIABLES
@@ -355,9 +362,10 @@ static void CAN_DemoReceive
 )
 {
     uint32          uiRxMsgNum;
-    uint8           ucMsgLength;
+    //uint8           ucMsgLength;
     CANMessage_t    sRxMsg;
-	VcpMessage_t 	msgToSend; // Dispatcher로 보낼 구조체 변수 추가
+	uint8 sendBuf[2];
+    QueueHandle_t targetQueue;
 
     uiRxMsgNum      = 0;
 
@@ -376,18 +384,33 @@ static void CAN_DemoReceive
                 mcu_printf( "***********************************************************************************\n" );
                 mcu_printf( "[ID] : 0x%X, [DATA SIZE] : %d, [DATA] : \r\n", sRxMsg.mId, sRxMsg.mDataLength );
 
-				msgToSend.mId = sRxMsg.mId;
-                msgToSend.data[0] = sRxMsg.mData[0];
-                msgToSend.data[1] = sRxMsg.mData[1];
+				sendBuf[0] = sRxMsg.mData[0];
+                sendBuf[1] = sRxMsg.mData[1];
 
-                // 2. Queue로 전송
-                if (xCanQueue != NULL)
+				targetQueue = NULL;
+
+				switch (sRxMsg.mId)
                 {
-                    if (xQueueSend(xCanQueue, &msgToSend, 0) != pdPASS)
+                    case VCP_IO_BREAK_LIGHT: targetQueue = xQ_Brake;      break;
+                    case VCP_IO_MOTOR_SPEED: targetQueue = xQ_MotorSpeed; break;
+                    case VCP_IO_MOTOR_WHEEL: targetQueue = xQ_MotorWheel; break;
+                    case VCP_IO_EMER_SIGNAL: targetQueue = xQ_Emer;       break;
+                    case VCP_IO_FUEL_LEVEL:  targetQueue = xQ_Fuel;       break;
+                    case VCP_IO_TURN_SIGNAL: targetQueue = xQ_Turn;       break;
+                    case VCP_IO_HEAD_LIGHT:  targetQueue = xQ_Head;       break;
+                    default:
+                        mcu_printf("[CAN] Unknown ID: 0x%X\n", sRxMsg.mId);
+                        break;
+                }
+
+				if (targetQueue != NULL)
+                {
+                    if (xQueueSend(targetQueue, sendBuf, 0) != pdPASS)
                     {
-                        mcu_printf("[CAN] Error: Queue Full!\n");
+                        mcu_printf("[Error] Queue Full! ID: 0x%X\n", sRxMsg.mId);
                     }
                 }
+
 				/*
                 for( ucMsgLength = 1U ; ucMsgLength < ( sRxMsg.mDataLength + 1U ) ; ucMsgLength++ )
                 {
@@ -405,7 +428,7 @@ static void CAN_DemoReceive
             }
             else
             {
-                mcu_printf(" [CAN DEMO] No message\n" );
+                //mcu_printf(" [CAN DEMO] No message\n" );
                 break;
             }
         }
