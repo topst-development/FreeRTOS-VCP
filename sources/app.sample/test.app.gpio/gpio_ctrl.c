@@ -163,27 +163,77 @@ void BrakeLightTask(void *pvParameters)
     }
 }
 
-void TurnSignalTask(void *pvParameters)
+void TurnSignalTask(void *pvParameters) 
 {
     uint8 recvBuf[2];
+    
+    boolean isLeftActive = FALSE;
+    boolean isRightActive = FALSE;
+    
+    boolean bLeftToggle = FALSE;
+    boolean bRightToggle = FALSE;
+
+    TickType_t xLastLeftTime = 0;
+    TickType_t xLastRightTime = 0;
+    
+    TickType_t xCurrentTime;
+    const TickType_t xFrequency = pdMS_TO_TICKS(500);
 
     (void)pvParameters;
 
-    for (;;)
+    for (;;) 
     {
-        if (xQueueReceive(xQ_Turn, recvBuf, portMAX_DELAY) == pdPASS)
+        if (xQueueReceive(xQ_Turn, recvBuf, 0) == pdPASS) 
         {
-            // [LEFT] 왼쪽 방향지시등 제어
-            if (recvBuf[0] == VCP_IO_SUB_LEFT)
+            if (recvBuf[0] == VCP_IO_SUB_LEFT) 
             {
-                ControlSignalLight(TRUE, (recvBuf[1] == VCP_IO_ACTION_ON));
+                if (recvBuf[1] == VCP_IO_ACTION_ON) {
+                    isLeftActive = TRUE;
+                    bLeftToggle = TRUE; 
+                    ControlSignalLight(TRUE, TRUE);
+                    xLastLeftTime = xTaskGetTickCount();
+                } else {
+                    isLeftActive = FALSE;
+                    ControlSignalLight(TRUE, FALSE);
+                }
             }
-            // [RIGHT] 오른쪽 방향지시등 제어
-            else if (recvBuf[0] == VCP_IO_SUB_RIGHT)
+            else if (recvBuf[0] == VCP_IO_SUB_RIGHT) 
             {
-                ControlSignalLight(FALSE, (recvBuf[1] == VCP_IO_ACTION_ON));
+                if (recvBuf[1] == VCP_IO_ACTION_ON) {
+                    isRightActive = TRUE;
+                    bRightToggle = TRUE;
+                    ControlSignalLight(FALSE, TRUE);
+                    xLastRightTime = xTaskGetTickCount();
+                } else {
+                    isRightActive = FALSE;
+                    ControlSignalLight(FALSE, FALSE);
+                }
             }
         }
+
+        xCurrentTime = xTaskGetTickCount();
+
+        if (isLeftActive == TRUE)
+        {
+            if ((xCurrentTime - xLastLeftTime) >= xFrequency)
+            {
+                bLeftToggle = !bLeftToggle;
+                ControlSignalLight(TRUE, bLeftToggle);
+                xLastLeftTime = xCurrentTime;
+            }
+        }
+
+        if (isRightActive == TRUE)
+        {
+            if ((xCurrentTime - xLastRightTime) >= xFrequency)
+            {
+                bRightToggle = !bRightToggle;
+                ControlSignalLight(FALSE, bRightToggle);
+                xLastRightTime = xCurrentTime;
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
