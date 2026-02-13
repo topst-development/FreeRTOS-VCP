@@ -101,20 +101,16 @@ void ControlSignalLight(boolean bLeft, boolean bTurnOn)
 	if (bLeft) {
 		if (bTurnOn) {
 			LeftSignalLED_ON();
-			mcu_printf("[LeftSignal] ON\r\n");
 		}
 		else {
 			LeftSignalLED_OFF();
-			mcu_printf("[LeftSignal] OFF\r\n");
 		}
 	} else {
 		if (bTurnOn) {
 			RightSignalLED_ON();
-			mcu_printf("[RightSignal] ON\r\n");
 		}
 		else {
 			RightSignalLED_OFF();
-			mcu_printf("[RightSignal] OFF\r\n");
 		}
 	}
 }
